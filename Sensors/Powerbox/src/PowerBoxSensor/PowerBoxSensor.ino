@@ -2,7 +2,7 @@
 
 /* Powerbox M-Link to S.Port converter */
 
-#define SPORT_PIN 3
+#define SPORT_PIN 11
 #define SPORT_PHYSICAL_ID 0x11
 
 #define TIMEOUT 5000

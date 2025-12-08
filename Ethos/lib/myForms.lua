@@ -14,7 +14,49 @@ function myForms.setValue(parameter, value)
 	parameter[4] = value
 end
 
-function myForms.createChoiceField(line, parameter, parameterChanged)
+function myForms.addColorField(line, parameter, parameterChanged)
+	field = form.addColorField(line, nil, function() --get value
+			return myForms.getValue(parameter) 
+		end, --set value
+		function(value) 
+			myForms.setValue(parameter, value) 
+			if  parameterChanged ~= nil then
+				parameterChanged(parameter) 
+			end
+		end
+	)
+	return field
+end
+
+function myForms.addSourceField(line, parameter, parameterChanged)
+	field = form.addSourceField(line, nil, function() --get value
+			return myForms.getValue(parameter) 
+		end, --set value
+		function(value) 
+			myForms.setValue(parameter, value) 
+			if  parameterChanged ~= nil then
+				parameterChanged(parameter) 
+			end
+		end
+	)
+	return field
+end
+
+function myForms.addBooleanField(line, parameter, parameterChanged)
+	field = form.addBooleanField(line, nil, function() --get value
+			return myForms.getValue(parameter) 
+		end, --set value
+		function(value) 
+			myForms.setValue(parameter, value) 
+			if  parameterChanged ~= nil then
+				parameterChanged(parameter) 
+			end
+		end
+	)
+	return field
+end
+
+function myForms.addChoiceField(line, parameter, parameterChanged)
 	field = form.addChoiceField(line, nil, parameter[5], 
 		function() --get value
 			return myForms.getValue(parameter) 
@@ -38,7 +80,7 @@ function myForms.createChoiceField(line, parameter, parameterChanged)
 	return field
 end
 
-function myForms.createNumberField(line, parameter, parameterChanged)
+function myForms.addNumberField(line, parameter, parameterChanged)
 	field = form.addNumberField(line, nil, parameter[5], parameter[6], 
 		function() --get value
 			return myForms.getValue(parameter) 
@@ -56,7 +98,11 @@ function myForms.createNumberField(line, parameter, parameterChanged)
 	if #parameter >= 7 and parameter[7] ~= nil then
 		field:suffix(parameter[7])
 	end
-	field:enable(false)
+
+	if parameter[4] == nil then
+		field:enable(false)
+  	end
+
 	return field
 end
 

@@ -1,9 +1,10 @@
+#include <Arduino.h>
 #include <SPort.h>
 #include "Ecu_Fadec.h"
 #include "Ecu_Jetronic.h"
 #include <EEPROM.h>
 
-#define SPORT_PIN 3
+#define SPORT_PIN 10
 #define SPORT_PHYSICAL_ID 0x10
 #define SPORT_COMMAND_ID 0x1B
 
@@ -25,9 +26,17 @@ void commandReceived(int prim, int applicationId, int value);
 SPortHub hub(SPORT_PHYSICAL_ID, SPORT_PIN);
 CustomSPortSensor terminalSensor(getTerminalData);
 
-//Ecu terminal data
-char terminalSentDisplay[32];
 
+char terminalSentDisplay[32];
+void loadEcuType();
+void setup();
+void loop();
+void setTerminalMode(bool enabled);
+void saveData();
+void loadData();
+void writeEEPROMValue(int pos, int value);
+int readEEPROMValue(int pos, int value);
+#line 31 "C:/Users/herma/SynologyDrive/Projects/Modelbouw/FrSky/Sensors/ECU/EcuSensor/src/EcuSensor.ino"
 void loadEcuType(){
   switch(ecuType) {
     case TYPE_JETRONIC: ecu = new Ecu_Jetronic(); break;
@@ -69,13 +78,13 @@ sportData getTerminalData(CustomSPortSensor* sensor) {
 
   if(ecu) {
     for(short pos = 0; pos <= 7; pos++) {
-      //Check if this part of the display has changed
+
       if(ecu->terminalDisplay[pos * 4] != terminalSentDisplay[pos * 4]
         || ecu->terminalDisplay[(pos * 4)+1] != terminalSentDisplay[(pos * 4)+1]
         || ecu->terminalDisplay[(pos * 4)+2] != terminalSentDisplay[(pos * 4)+2]
         || ecu->terminalDisplay[(pos * 4)+3] != terminalSentDisplay[(pos * 4)+3])
       {
-        //Update the sent display
+
         terminalSentDisplay[pos * 4] = ecu->terminalDisplay[pos * 4];
         terminalSentDisplay[(pos * 4)+1] = ecu->terminalDisplay[(pos * 4)+1];
         terminalSentDisplay[(pos * 4)+2] = ecu->terminalDisplay[(pos * 4)+2];
@@ -83,7 +92,7 @@ sportData getTerminalData(CustomSPortSensor* sensor) {
 
         data.applicationId = SPORT_APPL_ID_TERMINAL_BASE + pos;
 
-        //Prepare the S.Port data
+
         longHelper lh;
 
         lh.byteValue[0] = ecu->terminalDisplay[pos * 4];
@@ -107,7 +116,7 @@ void setTerminalMode(bool enabled) {
   }
 
   if(enabled) {
-    //Reset display buffer
+
     for(int i = 0; i <= 31; i++) {
       terminalSentDisplay[i] = ' ';
     }
@@ -115,26 +124,26 @@ void setTerminalMode(bool enabled) {
 }
 
 void commandReceived(int prim, int applicationId, int value) {
-  //Skip new command if old command has to be confirmed first
-  
+
+
   switch(prim) {
     case SPORT_HEADER_READ: {
-      if(applicationId == SPORT_APPL_ID_TERMINAL_BASE && value == TERMINAL_TYPE) { //Request type
+      if(applicationId == SPORT_APPL_ID_TERMINAL_BASE && value == TERMINAL_TYPE) {
         hub.sendCommand(SPORT_HEADER_RESPONSE, SPORT_APPL_ID_TERMINAL_BASE + TERMINAL_TYPE, ecuType);
       }
       break;
     }
     case SPORT_HEADER_WRITE: {
-      if(applicationId == SPORT_APPL_ID_TERMINAL_BASE) { //ECU Terminal command
+      if(applicationId == SPORT_APPL_ID_TERMINAL_BASE) {
         if(value == TERMINAL_ENABLE) {
-          //Enable terminal mode
+
           hub.sendCommand(SPORT_HEADER_RESPONSE, SPORT_APPL_ID_TERMINAL_BASE + TERMINAL_TYPE, ecuType);
           setTerminalMode(true);
         } else if(value == TERMINAL_DISABLE) {
-          //Disable terminal mode
+
           setTerminalMode(false);
         } else if(value >= TERMINAL_KEY && value < TERMINAL_TYPE) {
-          //Write keyNumber to ECU key buffer
+
           if(ecu) {
             ecu->terminalKey = value - TERMINAL_KEY;
           }
