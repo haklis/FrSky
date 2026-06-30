@@ -4,7 +4,7 @@
 #include "Ecu_Jetronic.h"
 #include <EEPROM.h>
 
-#define SPORT_PIN 10
+#define SPORT_PIN 5
 #define SPORT_PHYSICAL_ID 0x10
 #define SPORT_COMMAND_ID 0x1B
 
@@ -26,8 +26,16 @@ void commandReceived(int prim, int applicationId, int value);
 SPortHub hub(SPORT_PHYSICAL_ID, SPORT_PIN);
 CustomSPortSensor terminalSensor(getTerminalData);
 
-
 char terminalSentDisplay[32];
+
+// ECU connection tracking
+unsigned long lastEcuUpdate = 0;
+bool ecuConnected = false;
+
+// LED blink tracking
+unsigned long lastBlink = 0;
+bool ledState = false;
+
 void loadEcuType();
 void setup();
 void loop();
@@ -36,7 +44,7 @@ void saveData();
 void loadData();
 void writeEEPROMValue(int pos, int value);
 int readEEPROMValue(int pos, int value);
-#line 31 "C:/Users/herma/SynologyDrive/Projects/Modelbouw/FrSky/Sensors/ECU/EcuSensor/src/EcuSensor.ino"
+
 void loadEcuType(){
   switch(ecuType) {
     case TYPE_JETRONIC: ecu = new Ecu_Jetronic(); break;
@@ -51,7 +59,6 @@ void loadEcuType(){
 
 void setup() {
   loadData();
-
   loadEcuType();
 
   hub.commandReceived = commandReceived;
@@ -64,12 +71,36 @@ void setup() {
 
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, LOW);
+
+  // Initialize terminal display buffer
+  for(int i = 0; i < 32; i++) {
+    terminalSentDisplay[i] = ' ';
+  }
 }
 
 void loop() {
   hub.handle();
   if(ecu) {
     ecu->handle();
+  }
+
+  // ECU connection LED logic
+  if (ecuConnected) {
+    // Solid LED when ECU is connected
+    digitalWrite(LED_BUILTIN, HIGH);
+
+    // If no ECU update for 1 second → mark disconnected
+    if (millis() - lastEcuUpdate > 1000) {
+      ecuConnected = false;
+    }
+
+  } else {
+    // Blink LED when ECU is NOT connected
+    if (millis() - lastBlink > 500) {
+      ledState = !ledState;
+      digitalWrite(LED_BUILTIN, ledState);
+      lastBlink = millis();
+    }
   }
 }
 
@@ -84,7 +115,7 @@ sportData getTerminalData(CustomSPortSensor* sensor) {
         || ecu->terminalDisplay[(pos * 4)+2] != terminalSentDisplay[(pos * 4)+2]
         || ecu->terminalDisplay[(pos * 4)+3] != terminalSentDisplay[(pos * 4)+3])
       {
-
+        // Copy new terminal block
         terminalSentDisplay[pos * 4] = ecu->terminalDisplay[pos * 4];
         terminalSentDisplay[(pos * 4)+1] = ecu->terminalDisplay[(pos * 4)+1];
         terminalSentDisplay[(pos * 4)+2] = ecu->terminalDisplay[(pos * 4)+2];
@@ -92,15 +123,18 @@ sportData getTerminalData(CustomSPortSensor* sensor) {
 
         data.applicationId = SPORT_APPL_ID_TERMINAL_BASE + pos;
 
-
         longHelper lh;
-
         lh.byteValue[0] = ecu->terminalDisplay[pos * 4];
         lh.byteValue[1] = ecu->terminalDisplay[(pos * 4)+1];
         lh.byteValue[2] = ecu->terminalDisplay[(pos * 4)+2];
         lh.byteValue[3] = ecu->terminalDisplay[(pos * 4)+3];
 
         data.value = lh.longValue;
+
+        // Mark ECU as connected
+        lastEcuUpdate = millis();
+        ecuConnected = true;
+
         break;
       }
     }
@@ -116,7 +150,6 @@ void setTerminalMode(bool enabled) {
   }
 
   if(enabled) {
-
     for(int i = 0; i <= 31; i++) {
       terminalSentDisplay[i] = ' ';
     }
@@ -124,7 +157,6 @@ void setTerminalMode(bool enabled) {
 }
 
 void commandReceived(int prim, int applicationId, int value) {
-
 
   switch(prim) {
     case SPORT_HEADER_READ: {
@@ -139,14 +171,17 @@ void commandReceived(int prim, int applicationId, int value) {
 
           hub.sendCommand(SPORT_HEADER_RESPONSE, SPORT_APPL_ID_TERMINAL_BASE + TERMINAL_TYPE, ecuType);
           setTerminalMode(true);
+
         } else if(value == TERMINAL_DISABLE) {
 
           setTerminalMode(false);
+
         } else if(value >= TERMINAL_KEY && value < TERMINAL_TYPE) {
 
           if(ecu) {
             ecu->terminalKey = value - TERMINAL_KEY;
           }
+
         } else if(value >= TERMINAL_TYPE) {
           ecuType = value - TERMINAL_TYPE;
           saveData();
@@ -163,7 +198,7 @@ void saveData() {
 }
 
 void loadData() {
-  ecuType = readEEPROMValue(0, TYPE_JETRONIC);
+  ecuType = readEEPROMValue(0, TYPE_FADEC);
 }
 
 void writeEEPROMValue(int pos, int value) {
