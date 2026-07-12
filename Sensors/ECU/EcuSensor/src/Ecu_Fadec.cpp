@@ -121,39 +121,48 @@ void Ecu_Fadec::HandleXicoyFrame() {
         terminalDisplay[i] = ecuBuffer[i + 2];
     }
 
-    /*
-    if(display[0] == (int)'H' && display[1] == (int)'i') { status = 0x50; }
-    else if(display[0] == (int)'T' && display[1] == (int)'r') { status = 0x51; }
-    else if(display[0] == (int)'S' && display[2] == (int)'i') { status = 0x52; }
-    else if(display[0] == (int)'R' && display[1] == (int)'e') { status = 0x53; }
-    else if(display[0] == (int)'I') { status = 0x54; }
-    else if(display[0] == (int)'F' && display[1] == (int)'u') { status = 0x55; }
-    else if(display[0] == (int)'G' && display[5] == (int)'T') { status = 0x56; }
-    else if(display[0] == (int)'R' && display[1] == (int)'u') { status = 0x57; }
-    else if(display[0] == (int)'S' && display[2] == (int)'o') { status = 0x58; }
-    else if(display[0] == (int)'F' && display[1] == (int)'l') { status = 0x59; }
-    else if(display[0] == (int)'L') { status = 0x5A; }
-    else if(display[0] == (int)'C') { status = 0x5B; }
-    else if(display[0] == (int)'G' && display[4] == (int)'B') { status = 0x5C; }
-    else if(display[0] == (int)'S' && display[5] == (int)'B') { status = 0x5D; }
-    else if(display[0] == (int)'S' && display[2] == (int)'a') { status = 0x5F; }
-    else if(display[0] == (int)'P' && display[1] == (int)'r') { status = 0x60; }
-    else { status = 0x07; }
+    // Try to status decode ECU status from LCD text and map it to a status byte for s.port. 
+    // Jet Dashboard compatible status byte values
+    // https://github.com/GIB2A/ETHOS-LUA-XICOY-JetCat-KingTech-and-JetMunt
+    
+    uint8_t status = 36; // Default: "No Status"
+
+    // Jet Dashboard kompatibel dekoding
+    if (strncmp(terminalDisplay, "Trim Low", 8) == 0) status = 1;
+    else if (strncmp(terminalDisplay, "Ready", 5) == 0) status = 3;
+    else if (strncmp(terminalDisplay, "Ignition", 8) == 0) status = 4;
+    else if (strncmp(terminalDisplay, "PreHeat", 7) == 0) status = 5;
+    else if (strncmp(terminalDisplay, "BurnerOn", 8) == 0 ||
+            strncmp(terminalDisplay, "Burner On", 9) == 0) status = 26;
+    else if (strncmp(terminalDisplay, "Start On", 8) == 0 ||
+            strncmp(terminalDisplay, "StartOn", 7) == 0) status = 14;
+    else if (strncmp(terminalDisplay, "SwitchOver", 10) == 0 ||
+            strncmp(terminalDisplay, "SwitchOv", 8) == 0) status = 28;
+    else if (strncmp(terminalDisplay, "FuelRamp", 8) == 0 ||
+            strncmp(terminalDisplay, "Fuel Ramp", 9) == 0) status = 6;
+    else if (strncmp(terminalDisplay, "Run-Idle", 8) == 0 ||
+            strncmp(terminalDisplay, "Run Idle", 8) == 0 ||
+            strncmp(terminalDisplay, "Run IDLE", 8) == 0 ||
+            strncmp(terminalDisplay, "RunIdle", 7) == 0) status = 33;
+    else if (strncmp(terminalDisplay, "Running", 7) == 0) status = 33;
+    else if (strncmp(terminalDisplay, "Run Max", 7) == 0) status = 34;
+    else if (strncmp(terminalDisplay, "Stop", 4) == 0) status = 58;
+    else if (strncmp(terminalDisplay, "Cooling", 7) == 0 ||
+            strncmp(terminalDisplay, "Cool Down", 9) == 0) status = 31;
+
+    // Send status til S.Port
+    sensorECUStatus->value = status;
 
 
-    rc_puls = ecuBuffer[40];
-    rc_puls += ecuBuffer[41] * 256;
+    // rc_puls = ecuBuffer[40];
+    // rc_puls += ecuBuffer[41] * 256;
 
 
-    throttle = ecuBuffer[44] / 2.55;
-    */
+    // throttle = ecuBuffer[44] / 2.55;
+    
 
     // TODO Validate values
-    // TODO: THis is not the correct byte - most likely need to exctract the status from the LCD text
-    // https://github.com/GIB2A/ETHOS-LUA-XICOY-JetCat-KingTech-and-JetMunt
-    sensorECUStatus->value = ecuBuffer[43]; // TODO: This is incorrect byte 
-    
-    
+ 
     sensorEGT->value = ecuBuffer[45] * 4;  // Tested OK
     sensorRPM->value = (ecuBuffer[48] + (ecuBuffer[49] * 0x100)) * 100;  // Tested OK
     sensorCurrent->value = (ecuBuffer[38] + (ecuBuffer[37] * 0x100)) / 100;
