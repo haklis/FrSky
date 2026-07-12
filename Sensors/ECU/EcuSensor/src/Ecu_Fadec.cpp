@@ -1,7 +1,11 @@
 #include "Ecu_Fadec.h"
+//#include "src/Ecu_Fadec.h"
 #include <Sport.h>
 
+
+//SimpleSPortSensor* sensorECUStatus;
 Ecu_Fadec::Ecu_Fadec() {
+    sensorECUStatus = new SimpleSPortSensor(0x05100);
     sensorEGT = new SimpleSPortSensor(0x0400);
     sensorRPM = new SimpleSPortSensor(0x0500);
     sensorCurrent = new SimpleSPortSensor(0x0200);
@@ -19,6 +23,7 @@ void Ecu_Fadec::registerSensors(SPortHub& hub) {
     hub.registerSensor(*sensorCurrent);
     hub.registerSensor(*sensorBattVoltage);
     hub.registerSensor(*sensorPumpVoltage);
+    hub.registerSensor(*sensorECUStatus);
 }
 
 void Ecu_Fadec::handle() {
@@ -51,7 +56,8 @@ void Ecu_Fadec::enableSensors(bool enabled) {
     sensorCurrent->enabled = enabled;
     sensorBattVoltage->enabled = enabled;
     sensorPumpVoltage->enabled = enabled;
-};
+    sensorECUStatus->enabled = enabled;
+}
 
 void Ecu_Fadec::SendKeyCode() {
     if(terminalKey == 0) {
@@ -142,9 +148,14 @@ void Ecu_Fadec::HandleXicoyFrame() {
     throttle = ecuBuffer[44] / 2.55;
     */
 
-    //TODO Validate values
-    sensorEGT->value = ecuBuffer[45] * 4;
-    sensorRPM->value = (ecuBuffer[48] + (ecuBuffer[49] * 0x100)) * 100;
+    // TODO Validate values
+    // TODO: THis is not the correct byte - most likely need to exctract the status from the LCD text
+    // https://github.com/GIB2A/ETHOS-LUA-XICOY-JetCat-KingTech-and-JetMunt
+    sensorECUStatus->value = ecuBuffer[43]; // TODO: This is incorrect byte 
+    
+    
+    sensorEGT->value = ecuBuffer[45] * 4;  // Tested OK
+    sensorRPM->value = (ecuBuffer[48] + (ecuBuffer[49] * 0x100)) * 100;  // Tested OK
     sensorCurrent->value = (ecuBuffer[38] + (ecuBuffer[37] * 0x100)) / 100;
     sensorBattVoltage->value = ecuBuffer[46] * 6;
     sensorPumpVoltage->value = ecuBuffer[42] * 6;

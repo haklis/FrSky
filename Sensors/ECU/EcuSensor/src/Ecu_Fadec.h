@@ -23,6 +23,7 @@
       SimpleSPortSensor* sensorCurrent;
       SimpleSPortSensor* sensorBattVoltage;
       SimpleSPortSensor* sensorPumpVoltage;
+      SimpleSPortSensor* sensorECUStatus;
 
       void SendKeyCode();
       void HandleXicoyFrame();
