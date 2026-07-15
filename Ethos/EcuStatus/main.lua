@@ -1,127 +1,193 @@
 local statusText = {
-    [1]="Trim",[3]="Ready",[4]="Ignition",[5]="Preheat",[26]="Burner",
-    [14]="Start",[28]="Switch",[6]="Fuel",[33]="Run",[34]="Run Max",
-    [31]="Cool",[58]="Stop",[0]="High",[18]="Low",[25]="Flameout",
-    [19]="Reset",[22]="Battery",[23]="Timeout",[24]="Overtemp",
-    [30]="Pump",[17]="Fail",[20]="RPM",[16]="User",[35]="Restart",
-    [36]="No Status"
+    [1]="Trim Low",
+    [3]="Ready",
+    [4]="Ignition",
+    [5]="Preheat",
+    [6]="Fuel",
+    [14]="Start",
+    [16]="User",
+    [17]="Fail",
+    [18]="Low",
+    [19]="Reset",
+    [20]="RPM",
+    [22]="Battery",
+    [23]="Timeout",
+    [24]="Overtemp",
+    [25]="Flameout",
+    [26]="Burner",
+    [28]="SwitchOv",
+    [30]="Pump",
+    [31]="Cool",
+    [33]="Run",
+    [34]="Run Max",
+    [35]="Restart",
+    [36]="No Status",
+    [58]="Stop",
+    [0]="High"
 }
 
-local colorError  = { [0]=true,[18]=true,[25]=true,[19]=true,[22]=true,[23]=true,[24]=true,[30]=true,[17]=true }
-local colorOrange = { [4]=true,[5]=true,[26]=true,[14]=true,[28]=true,[6]=true }
-local colorBlue   = { [31]=true,[58]=true }
-local colorGreen  = { [1]=true,[3]=true,[33]=true,[34]=true,[35]=true }
+local colorError = {
+    [0]=true,
+    [17]=true,
+    [18]=true,
+    [19]=true,
+    [22]=true,
+    [23]=true,
+    [24]=true,
+    [25]=true,
+    [30]=true
+}
+
+local colorOrange = {
+    [4]=true,
+    [5]=true,
+    [6]=true,
+    [14]=true,
+    [26]=true,
+    [28]=true
+}
+
+local colorBlue = {
+    [1]=true,
+    [31]=true,
+    [58]=true
+}
+
+local colorGreen = {
+    [3]=true,
+    [33]=true,
+    [34]=true,
+    [35]=true
+}
 
 local function getColor(code)
-    if colorError[code]  then return COLOR_RED end
-    if colorOrange[code] then return lcd.ORANGE end
-    if colorBlue[code]   then return lcd.BLUE end
-    if colorGreen[code]  then return lcd.GREEN end
+
+    if colorError[code] then
+        return COLOR_RED
+    end
+
+    if colorOrange[code] then
+        return COLOR_ORANGE
+    end
+
+    if colorBlue[code] then
+        return COLOR_BLUE
+    end
+
+    if colorGreen[code] then
+        return COLOR_GREEN
+    end
+
     return COLOR_WHITE
 end
 
-local function name(widget)
+local function name()
     return "ECU Status"
 end
 
-----------------------------------------------------------------------
--- CREATE: EthOS 2026 script-widget API
-----------------------------------------------------------------------
-
 local function create()
     return {
-        sensor = nil,
-        value  = "---",
-        color  = COLOR_WHITE,
+        source = nil,
+        code = nil,
+        text = "---",
+        color = COLOR_WHITE,
+        width = 0,
+        height = 0
     }
 end
 
-----------------------------------------------------------------------
--- CONFIGURE: safe, no nil indexing
-----------------------------------------------------------------------
+local function build(widget)
+    widget.width, widget.height = lcd.getWindowSize()
+end
 
 local function configure(widget)
+
     local line = form.addLine("ECU Status Sensor")
 
-    form.addFieldSensor(
+    form.addSourceField(
         line,
-        widget.sensor,
-        function() return widget.sensor end,
-        function(v)
-            widget.sensor = v
-            storage.write("ECU_sensor", v)
+        nil,
+        function()
+            return widget.source
+        end,
+        function(newValue)
+            widget.source = newValue
         end
     )
 end
 
-----------------------------------------------------------------------
--- READ / WRITE
-----------------------------------------------------------------------
-
 local function read(widget)
-    widget.sensor = storage.read("ECU_sensor")
-    return true
+    widget.source = storage.read("source")
 end
 
 local function write(widget)
-    storage.write("ECU_sensor", widget.sensor)
-    return true
+    storage.write("source", widget.source)
 end
-
-----------------------------------------------------------------------
--- WAKEUP: safe, checks nil before use
-----------------------------------------------------------------------
 
 local function wakeup(widget)
-    if not widget.sensor then return end
 
-    local val = sport.getSensorValue(widget.sensor)
-    if not val then return end
+    if not widget.source then
+        return
+    end
 
-    local code = val.value
-    widget.value = statusText[code] or ("Unknown (" .. code .. ")")
-    widget.color = getColor(code)
+    local code = widget.source:value()
 
-    lcd.invalidate()
+    if code == nil then
+        widget.text = "No Telem"
+        widget.color = COLOR_RED
+        return
+    end
+
+    code = math.floor(code)
+
+    if code ~= widget.code then
+
+        widget.code = code
+
+        widget.text =
+            statusText[code]
+            or ("Unknown " .. tostring(code))
+
+        widget.color = getColor(code)
+
+        lcd.invalidate()
+    end
 end
-
-----------------------------------------------------------------------
--- PAINT: safe, no zone usage
-----------------------------------------------------------------------
 
 local function paint(widget)
-    lcd.color(widget.color)
-    lcd.drawText(0, 0, widget.value, FONT_XXL)
-    lcd.color(COLOR_WHITE)
-end
 
-local function event(widget, category, value, x, y)
-    return true
+    local w = widget.width
+    local h = widget.height
+
+    lcd.font(FONT_XL)
+    lcd.color(widget.color)
+
+    lcd.drawText(
+        w / 2,
+        h / 2,
+        widget.text,
+        TEXT_CENTERED
+    )
 end
 
 local function menu(widget)
     return {}
 end
 
-----------------------------------------------------------------------
--- INIT: EthOS 2026 script-widget registration
-----------------------------------------------------------------------
-
 local function init()
-    local key = "EcuStat"  -- <= 8 chars
 
     system.registerWidget({
-        key       = key,
-        name      = name,
-        create    = create,
+        key = "ECUSTAT",
+        name = name,
+        create = create,
+        build = build,
         configure = configure,
-        paint     = paint,
-        wakeup    = wakeup,
-        read      = read,
-        write     = write,
-        event     = event,
-        menu      = menu,
-        persistent = false,
+        wakeup = wakeup,
+        paint = paint,
+        read = read,
+        write = write,
+        menu = menu,
+        title = false
     })
 end
 
