@@ -47,7 +47,7 @@ local colorOrange = {
     [28]=true
 }
 
-local colorBlue = {
+local colorWhite = {
     [1]=true,
     [31]=true,
     [58]=true
@@ -70,8 +70,8 @@ local function getColor(code)
         return COLOR_ORANGE
     end
 
-    if colorBlue[code] then
-        return COLOR_BLUE
+    if colorWhite[code] then
+        return COLOR_WHITE
     end
 
     if colorGreen[code] then
