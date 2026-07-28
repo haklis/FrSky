@@ -1,5 +1,20 @@
 --[[
- Arduino telemetry adapter integrates effective pump voltage
+  FuelEst - Turbine fuel-remaining widget for FrSky ETHOS
+  --------------------------------------------------------
+  API pattern confirmed against github.com/flyingeek/ethos-color-value
+  (an actively maintained widget that branches on ethosVersion.major>=26),
+  so this follows the current lifecycle: create -> build -> configure ->
+  read/write (storage) -> wakeup (throttled) -> paint -> menu.
+
+  ETHOS has two coexisting firmware branches as of mid-2026: the legacy
+  1.6.x line and the newer year-numbered 26.x line. This script avoids
+  version-specific font/theme names that only exist on one branch,
+  falling back where needed (see valueFont below).
+
+  ------------------------------------------------------------------
+  CONCEPT (unchanged from before)
+  ------------------------------------------------------------------
+  Your Arduino telemetry adapter integrates effective pump voltage
   every ECU frame:
 
       effective_pump_voltage = (PW / PW_max) * battery_voltage
@@ -20,6 +35,23 @@
   manual top-off mid-day without power-cycling anything.
 
   ------------------------------------------------------------------
+  FUEL LOW / FUEL CRITICAL
+  ------------------------------------------------------------------
+  Two independent thresholds, each with its own audio file:
+
+    - Fuel Low      (default 30%) -> yellow widget background
+    - Fuel Critical (default 10%) -> red widget background
+
+  The audio file for a threshold plays once, the first time fuel
+  drops to or below that percentage ("fires"). It re-arms only once
+  fuel rises back above (threshold + CALLOUT_HYSTERESIS), so normal
+  telemetry noise/rounding near the threshold doesn't repeat the
+  callout on every wakeup. "Mark tank full" (menu) also re-arms both
+  immediately. The background color follows the current fuel level
+  directly (not the fired/armed state), so it always reflects reality
+  even if you mute/skip a callout.
+
+  ------------------------------------------------------------------
   INSTALLATION
   ------------------------------------------------------------------
   Copy to /scripts/fuelest/main.lua on the radio's storage, then add
@@ -32,6 +64,10 @@ local widgetName = "Fuel %"
 -- refresh throttle: fuel telemetry doesn't need to be checked faster
 -- than a couple times a second
 local refreshRate = 0.5 -- seconds
+
+-- percentage points the fuel level must rise back above a threshold
+-- before that threshold's audio callout is allowed to fire again
+local CALLOUT_HYSTERESIS = 3
 
 -- defensive font choice: FONT_XL/FONT_S exist on both 1.6.x and 26.x;
 -- newer fonts like FONT_M are not guaranteed pre-26, so we don't rely on them
@@ -50,7 +86,14 @@ local function create()
     source = nil,     -- telemetry source for pump_total
     baseline = 0,      -- raw value treated as "tank full"
 
+    fuelLowPct = 30,        -- yellow background + callout at/below this %
+    fuelLowFile = nil,      -- audio file for the fuel-low callout
+    fuelCriticalPct = 10,   -- red background + callout at/below this %
+    fuelCriticalFile = nil, -- audio file for the fuel-critical callout
+
     -- runtime state (not persisted)
+    fuelLowFired = false,
+    fuelCriticalFired = false,
     pct = nil,
     lastPctInt = nil,
     timestamp = 0,
@@ -97,6 +140,40 @@ local function configure(widget)
       widget.baseline = 0 -- new sensor: reset baseline, avoid stale offset
       widget.updateNextWakeup = true
     end)
+
+  line = form.addLine("Fuel Low threshold (%)")
+  form.addNumberField(line, nil, 0, 100,
+    function() return widget.fuelLowPct end,
+    function(value)
+      widget.fuelLowPct = value
+      widget.fuelLowFired = false -- re-arm on threshold change
+      widget.updateNextWakeup = true
+    end)
+
+  line = form.addLine("Fuel Low audio file")
+  form.addFileField(line, nil, "/audio/en/us", "audio",
+    function() return widget.fuelLowFile end,
+    function(value)
+      widget.fuelLowFile = value
+      widget.fuelLowFired = false
+    end)
+
+  line = form.addLine("Fuel Critical threshold (%)")
+  form.addNumberField(line, nil, 0, 100,
+    function() return widget.fuelCriticalPct end,
+    function(value)
+      widget.fuelCriticalPct = value
+      widget.fuelCriticalFired = false
+      widget.updateNextWakeup = true
+    end)
+
+  line = form.addLine("Fuel Critical audio file")
+  form.addFileField(line, nil, "/audio/en/us", "audio",
+    function() return widget.fuelCriticalFile end,
+    function(value)
+      widget.fuelCriticalFile = value
+      widget.fuelCriticalFired = false
+    end)
 end
 
 -- ------------------------------------------------------------------
@@ -107,6 +184,10 @@ local function read(widget)
   widget.calib = storage.read("calib") or widget.calib
   widget.source = storage.read("source")
   widget.baseline = storage.read("baseline") or 0
+  widget.fuelLowPct = storage.read("fuelLowPct") or widget.fuelLowPct
+  widget.fuelLowFile = storage.read("fuelLowFile")
+  widget.fuelCriticalPct = storage.read("fuelCriticalPct") or widget.fuelCriticalPct
+  widget.fuelCriticalFile = storage.read("fuelCriticalFile")
 end
 
 local function write(widget)
@@ -114,6 +195,10 @@ local function write(widget)
   storage.write("calib", widget.calib)
   storage.write("source", widget.source)
   storage.write("baseline", widget.baseline)
+  storage.write("fuelLowPct", widget.fuelLowPct)
+  storage.write("fuelLowFile", widget.fuelLowFile)
+  storage.write("fuelCriticalPct", widget.fuelCriticalPct)
+  storage.write("fuelCriticalFile", widget.fuelCriticalFile)
 end
 
 -- ------------------------------------------------------------------
@@ -141,6 +226,22 @@ local function computePct(widget)
 end
 
 -- ------------------------------------------------------------------
+-- checkCallout(): edge-triggered threshold callout with hysteresis.
+-- Fires (plays the configured file) the first time pct drops to/below
+-- threshold; re-arms once pct rises back above threshold+hysteresis.
+-- ------------------------------------------------------------------
+local function checkCallout(pct, threshold, file, fired)
+  if not file then return fired end
+  if not fired and pct <= threshold then
+    system.playFile(file)
+    return true
+  elseif fired and pct > (threshold + CALLOUT_HYSTERESIS) then
+    return false
+  end
+  return fired
+end
+
+-- ------------------------------------------------------------------
 -- wakeup(): throttled to refreshRate; only invalidates on real change
 -- ------------------------------------------------------------------
 local function wakeup(widget)
@@ -153,6 +254,11 @@ local function wakeup(widget)
 
   local pct = computePct(widget)
   local pctInt = pct and math.floor(pct + 0.5) or nil
+
+  if pct ~= nil then
+    widget.fuelLowFired = checkCallout(pct, widget.fuelLowPct, widget.fuelLowFile, widget.fuelLowFired)
+    widget.fuelCriticalFired = checkCallout(pct, widget.fuelCriticalPct, widget.fuelCriticalFile, widget.fuelCriticalFired)
+  end
 
   if enforce or pctInt ~= widget.lastPctInt then
     widget.pct = pct
@@ -184,19 +290,28 @@ local function paint(widget)
     return
   end
 
-  -- red < 15%, amber < 30%, green otherwise
-  local col
-  if pct < 15 then
-    col = lcd.RGB(220, 0, 0)
-  elseif pct < 30 then
-    col = lcd.RGB(230, 160, 0)
+  -- current fuel state drives both background and text/bar color;
+  -- based directly on the live percentage, not on callout fired state
+  local bgColor, fgColor
+  if pct <= widget.fuelCriticalPct then
+    bgColor = lcd.RGB(200, 0, 0)     -- red
+    fgColor = lcd.RGB(255, 255, 255) -- white text for contrast on red
+  elseif pct <= widget.fuelLowPct then
+    bgColor = lcd.RGB(230, 200, 0)   -- yellow
+    fgColor = lcd.RGB(0, 0, 0)       -- black text for contrast on yellow
   else
-    col = lcd.RGB(0, 170, 0)
+    bgColor = nil                    -- normal: leave theme background as-is
+    fgColor = lcd.RGB(0, 170, 0)     -- green
+  end
+
+  if bgColor then
+    lcd.color(bgColor)
+    lcd.drawFilledRectangle(0, 0, w, h)
   end
 
   -- big percentage figure
   lcd.font(valueFont)
-  lcd.color(col)
+  lcd.color(fgColor)
   local textY = math.floor(h / 2) - 20
   lcd.drawText(w / 2, textY, string.format("%d%%", math.floor(pct + 0.5)), TEXT_CENTERED)
 
@@ -207,7 +322,7 @@ local function paint(widget)
   lcd.drawRectangle(barX, barY, barW, barH)
   local fillW = math.floor((barW - 2) * (pct / 100))
   if fillW > 0 then
-    lcd.color(col)
+    lcd.color(fgColor)
     lcd.drawFilledRectangle(barX + 1, barY + 1, fillW, barH - 2)
   end
 end
@@ -225,6 +340,8 @@ local function menu(widget)
         if type(raw) == "number" then
           widget.baseline = raw
           storage.write("baseline", widget.baseline)
+          widget.fuelLowFired = false
+          widget.fuelCriticalFired = false
           widget.updateNextWakeup = true
         end
       end
