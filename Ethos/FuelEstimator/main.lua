@@ -60,6 +60,7 @@
 ]]
 
 local widgetName = "Fuel %"
+local audioPath = system.getAudioVoice() or "/audio"
 
 -- refresh throttle: fuel telemetry doesn't need to be checked faster
 -- than a couple times a second
@@ -156,6 +157,9 @@ local function configure(widget)
     function(value)
       widget.fuelLowFile = value
       widget.fuelLowFired = false
+      if value and value ~= "" then
+        system.playFile(audioPath .. "/" .. value)
+      end
     end)
 
   line = form.addLine("Fuel Critical threshold (%)")
@@ -173,6 +177,9 @@ local function configure(widget)
     function(value)
       widget.fuelCriticalFile = value
       widget.fuelCriticalFired = false
+      if value and value ~= "" then
+        system.playFile(audioPath .. "/" .. value)
+      end
     end)
 end
 
@@ -233,7 +240,7 @@ end
 local function checkCallout(pct, threshold, file, fired)
   if not file then return fired end
   if not fired and pct <= threshold then
-    system.playFile(file)
+    system.playFile(audioPath .. "/" .. file)
     return true
   elseif fired and pct > (threshold + CALLOUT_HYSTERESIS) then
     return false
